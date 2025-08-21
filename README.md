@@ -1,7 +1,5 @@
 # Proyek Analisis Data: Analisis Penggunaan Model Bahasa (LLM)
 
-Proyek ini merupakan submission untuk kelas **Belajar Analisis Data dengan Python** di Dicoding. Fokus analisis adalah untuk memahami tren penggunaan, pola interaksi, dan tingkat kepuasan pengguna terhadap berbagai *Large Language Models* (LLM).
-
 ## Latar Belakang
 
 Dengan semakin populernya teknologi AI generatif, muncul berbagai model bahasa dari banyak perusahaan. Memahami model mana yang paling populer, bagaimana pengguna berinteraksi dengannya, dan mana yang paling disukai menjadi krusial bagi pengembang, peneliti, dan bisnis. Analisis ini mencoba menjawab pertanyaan-pertanyaan tersebut dengan menggunakan dataset publik dari **LMSYS Org**.
