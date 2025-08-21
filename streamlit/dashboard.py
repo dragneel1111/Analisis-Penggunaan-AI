@@ -30,14 +30,15 @@ def load_conversation_data(sample_size=5000):
     if sample_size and sample_size < len(df_raw):
         df_raw = df_raw.sample(sample_size, random_state=42).reset_index(drop=True)
 
-    # 🔑 Normalisasi: gabungkan model_a dan model_b jadi satu kolom "model"
-    df_long = pd.melt(
-        df_raw,
-        id_vars=[c for c in df_raw.columns if c not in ["model_a", "model_b"]],
-        value_vars=["model_a", "model_b"],
-        var_name="model_slot",
-        value_name="model"
+    # 🔑 Normalisasi: gabungkan (model, conversation) dari A & B
+    df_long_a = df_raw[["winner_model", "model_a", "conversation_a"]].rename(
+        columns={"model_a": "model", "conversation_a": "conversation"}
     )
+    df_long_b = df_raw[["winner_model", "model_b", "conversation_b"]].rename(
+        columns={"model_b": "model", "conversation_b": "conversation"}
+    )
+
+    df_long = pd.concat([df_long_a, df_long_b], ignore_index=True)
     return df_long
 
 @st.cache_data(show_spinner=True, ttl=3600)
@@ -49,7 +50,6 @@ def compute_win_rate(df):
 
 @st.cache_data(show_spinner=True, ttl=3600)
 def compute_avg_turns(df):
-    turns = df['conversation'].apply(len)
     avg_turns = df.groupby('model')['conversation'].apply(lambda g: g.apply(len).mean())
     return avg_turns
 
