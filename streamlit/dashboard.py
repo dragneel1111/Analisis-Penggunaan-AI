@@ -22,14 +22,23 @@ st.set_page_config(
 
 st.title("📊 Dashboard Analisis Data Penggunaan LLM")
 
-# --- FUNGSI-FUNGSI UNTUK MEMUAT DAN MENGOLAH DATA DENGAN CACHING ---
+# --- FUNGSI-FUNGSI UNTUK MEMUAT DAN MENGOLAH DATA ---
 @st.cache_data(show_spinner=True, ttl=3600)
 def load_conversation_data(sample_size=5000):
     dataset = load_dataset("lmsys/lmsys-arena-human-preference-55k", split="train")
-    df = pd.DataFrame(dataset)
-    if sample_size and sample_size < len(df):
-        df = df.sample(sample_size, random_state=42).reset_index(drop=True)
-    return df
+    df_raw = pd.DataFrame(dataset)
+    if sample_size and sample_size < len(df_raw):
+        df_raw = df_raw.sample(sample_size, random_state=42).reset_index(drop=True)
+
+    # 🔑 Normalisasi: gabungkan model_a dan model_b jadi satu kolom "model"
+    df_long = pd.melt(
+        df_raw,
+        id_vars=[c for c in df_raw.columns if c not in ["model_a", "model_b"]],
+        value_vars=["model_a", "model_b"],
+        var_name="model_slot",
+        value_name="model"
+    )
+    return df_long
 
 @st.cache_data(show_spinner=True, ttl=3600)
 def compute_win_rate(df):
@@ -41,7 +50,7 @@ def compute_win_rate(df):
 @st.cache_data(show_spinner=True, ttl=3600)
 def compute_avg_turns(df):
     turns = df['conversation'].apply(len)
-    avg_turns = df.groupby('model').apply(lambda g: g['conversation'].apply(len).mean())
+    avg_turns = df.groupby('model')['conversation'].apply(lambda g: g.apply(len).mean())
     return avg_turns
 
 # --- HELPER: proxy "beres" & kategori topik (untuk TTS & Fit-for-Purpose) ---
