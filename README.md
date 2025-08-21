@@ -67,21 +67,6 @@ Analisis ini difokuskan untuk menjawab **5 pertanyaan utama**:
 
 ---
 
-## 🚀 Menjalankan Dashboard
-
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-````
-
-2. Jalankan aplikasi Streamlit:
-
-   ```bash
-   streamlit run dashboard.py
-   ```
-3. Buka link yang muncul (biasanya `http://localhost:8501`) di browser.
-
----
 
 ## 📌 Kesimpulan Umum
 
