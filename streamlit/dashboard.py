@@ -55,7 +55,7 @@ def compute_avg_turns(df):
 
 # --- HELPER: proxy "beres" & kategori topik (untuk TTS & Fit-for-Purpose) ---
 OK_PAT = re.compile(
-    r"(thanks|thank you|terima kasih|berhasil|works|solved|mantap|fixed?|oke+|ok\s*(udah|siap)?|sip|resolved)",
+    r"(thanks|thank you|terima kasih|berhasil|works|solved|mantap|fixed?|oke+|ok|done|clear|yes|sip|resolved)",
     re.IGNORECASE
 )
 
@@ -69,13 +69,13 @@ TOPIC_RULES = {
 def _user_text_from_conv(conv):
     parts = []
     for msg in conv:
-        if msg.get("role") == "user":
+        if isinstance(msg, dict) and msg.get("role") == "user":
             parts.append((msg.get("content") or "").strip())
     return " ".join(parts)
 
 def is_solved(conv):
     for msg in reversed(conv):
-        if msg.get("role") == "user":
+        if isinstance(msg, dict) and msg.get("role") == "user":
             return bool(OK_PAT.search((msg.get("content") or "").lower()))
     return False
 
@@ -119,8 +119,8 @@ st.header("2. Topik yang Dibahas")
 user_texts = []
 for conv in df_filtered["conversation"]:
     for msg in conv:
-        if msg["role"] == "user":
-            user_texts.append(msg["content"].lower())
+        if isinstance(msg, dict) and msg.get("role") == "user":
+            user_texts.append(msg.get("content", "").lower())
 text = " ".join(user_texts)
 words = re.findall(r"\b\w+\b", text)
 stopwords = set(["the","and","to","a","i","of","in","for","is","it","that","you","on","this","with","as","are","be","can","my","me"])
@@ -154,12 +154,15 @@ df_feat = add_derived_columns(df_filtered)
 
 # 1) TTS
 df_solved = df_feat[df_feat["is_solved"]]
-tts_stats = (
-    df_solved
-    .groupby("model", observed=True)["turn"]
-    .agg(n_solved="count", mean="mean", median="median", p75=lambda s: s.quantile(0.75))
-    .sort_values("median")
-)
+if df_solved.empty:
+    tts_stats = pd.DataFrame(columns=["n_solved", "mean", "median", "p75"])
+else:
+    tts_stats = (
+        df_solved
+        .groupby("model", observed=True)["turn"]
+        .agg(n_solved="count", mean="mean", median="median", p75=lambda s: s.quantile(0.75))
+        .sort_values("median")
+    )
 
 # 2) Heatmap Model × Topik
 TOP_N_HEAT = st.sidebar.number_input("Top-N model untuk heatmap", min_value=4, max_value=20, value=8, step=1)
