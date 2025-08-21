@@ -1,61 +1,29 @@
-# Proyek Analisis Data: Analisis Penggunaan Model Bahasa (LLM)
+# Proyek Analisis Data: Analisis Penggunaan Large Language Models (LLM)
 
-## Latar Belakang
+## 🚀 Latar Belakang Proyek
 
-Dengan semakin populernya teknologi AI generatif, muncul berbagai model bahasa dari banyak perusahaan. Memahami model mana yang paling populer, bagaimana pengguna berinteraksi dengannya, dan mana yang paling disukai menjadi krusial bagi pengembang, peneliti, dan bisnis. Analisis ini mencoba menjawab pertanyaan-pertanyaan tersebut dengan menggunakan dataset publik dari **LMSYS Org**.
+Seiring dengan pesatnya perkembangan *Large Language Models* (LLM), analisis mengenai bagaimana model-model ini digunakan dan dipersepsikan oleh pengguna menjadi sangat penting. Proyek ini bertujuan untuk menganalisis data percakapan dari berbagai model AI untuk memahami tren popularitas, pola interaksi, dan tingkat kepuasan pengguna. Analisis ini krusial bagi pengembang, peneliti, dan bisnis untuk memahami lanskap kompetitif dan preferensi pengguna di dunia AI generatif.
 
-## Pertanyaan Bisnis
+## ❓ Pertanyaan Bisnis
 
-1.  **Popularitas Model:** Model AI mana yang paling populer digunakan oleh pengguna?
-2.  **Pola Interaksi:** Bagaimana pola interaksi pengguna, seperti panjang percakapan dan bahasa yang digunakan, pada berbagai model AI?
-3.  **Kepuasan Pengguna:** Model AI mana yang memiliki tingkat kepuasan atau preferensi tertinggi dari pengguna saat diadu satu sama lain?
+Analisis ini dirancang untuk menjawab tiga pertanyaan bisnis utama:
 
-## Sumber Data
+1.  **Popularitas Model:** Model AI mana yang paling sering digunakan atau paling populer di antara pengguna?
+2.  **Analisis Topik Percakapan:** Apa saja topik atau jenis tugas yang paling sering diminta oleh pengguna kepada model-model AI tersebut (misalnya: pemrograman, penulisan kreatif, tanya jawab umum)?
+3.  **Perbandingan Kualitas & Kepuasan:** Apakah ada perbedaan dalam panjang percakapan atau pola interaksi yang menunjukkan kepuasan pengguna? Dan, model mana yang memiliki tingkat kepuasan (win rate) tertinggi?
 
-Analisis ini menggunakan dua dataset dari **Hugging Face**:
-1.  **[LMSYS-Chat-1M](https://huggingface.co/datasets/lmsys/lmsys-chat-1m):** Berisi 1 juta percakapan anonim dengan 25 model AI. Digunakan untuk menganalisis popularitas dan pola interaksi.
-2.  **[Chatbot Arena Conversations](https://huggingface.co/datasets/lmsys/chatbot_arena_conversations):** Berisi data percakapan dengan sistem *voting* preferensi pengguna. Digunakan untuk menganalisis tingkat kepuasan.
+## 💾 Sumber Data
 
-## File & Direktori
+Analisis ini menggunakan dua dataset publik yang disediakan oleh **Large Model Systems Organization (LMSYS Org)** melalui Hugging Face:
 
--   **`Proyek_Analisis_Data.ipynb`**: Notebook utama yang berisi seluruh proses analisis data, mulai dari pemuatan, pembersihan, hingga visualisasi data.
--   **`dashboard/`**: Folder yang berisi aplikasi web interaktif Streamlit.
-    -   **`dashboard.py`**: File utama untuk menjalankan dasbor Streamlit.
--   **`requirements.txt`**: Daftar pustaka (library) Python yang dibutuhkan untuk menjalankan proyek.
--   **`README.md`**: Dokumen ini.
+1.  **[LMSYS-Chat-1M](https://huggingface.co/datasets/lmsys/lmsys-chat-1m):** Berisi 1 juta percakapan anonim dari 25 model AI terkemuka. Dataset ini digunakan untuk menganalisis popularitas dan pola interaksi.
+2.  **[Chatbot Arena Conversations](https://huggingface.co/datasets/lmsys/chatbot_arena_conversations):** Berisi percakapan dengan sistem pemungutan suara (voting), di mana pengguna memilih respons AI yang lebih baik. Dataset ini digunakan sebagai proksi untuk mengukur kepuasan dan preferensi pengguna.
 
-## Cara Menjalankan Proyek
+## 🛠️ Teknologi & Pustaka yang Digunakan
 
-1.  **Clone Repositori (Opsional)**
-    Jika Anda mengunduh repositori ini, pastikan Anda berada di direktori yang benar.
-
-2.  **Buat Lingkungan Virtual**
-    Sangat disarankan untuk membuat lingkungan virtual untuk menghindari konflik dependensi.
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # Untuk macOS/Linux
-    venv\Scripts\activate  # Untuk Windows
-    ```
-
-3.  **Instal Dependensi**
-    Instal semua pustaka yang dibutuhkan dengan menjalankan perintah berikut di terminal:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-4.  **Jalankan Notebook Analisis**
-    Buka dan jalankan file `Proyek_Analisis_Data.ipynb` menggunakan Jupyter Notebook atau lingkungan serupa seperti VS Code. Pastikan untuk melakukan autentikasi Hugging Face sesuai petunjuk di dalam notebook untuk mengakses dataset.
-
-5.  **Jalankan Dasbor Streamlit**
-    Untuk melihat dasbor interaktif, navigasikan ke folder `dashboard/` dan jalankan perintah berikut:
-    ```bash
-    cd dashboard
-    streamlit run dashboard.py
-    ```
-
-## Hasil Analisis (Kesimpulan)
-
-Berdasarkan analisis yang telah dilakukan, ditemukan beberapa wawasan utama:
--   **Popularitas & Kepuasan:** Terdapat korelasi kuat antara popularitas, engagement (panjang percakapan), dan tingkat kepuasan pengguna. Model seperti **`gpt-4`** dan **`claude-1`** secara konsisten mendominasi di ketiga metrik tersebut, menunjukkan kepemimpinan pasar yang jelas.
--   **Pola Interaksi:** Model yang lebih canggih cenderung digunakan untuk percakapan yang lebih panjang dan kompleks, sementara bahasa yang dominan digunakan adalah Bahasa Inggris, menandakan audiens global.
--   **Tingkat Kemenangan:** Analisis *win rate* dari Chatbot Arena mengonfirmasi bahwa model-model teratas tidak hanya sering digunakan, tetapi juga lebih disukai kualitasnya saat dibandingkan secara langsung oleh pengguna.
+-   **Bahasa:** Python 3
+-   **Analisis Data:** Pandas, NumPy
+-   **Visualisasi Data:** Matplotlib, Seaborn
+-   **Dasbor Interaktif:** Streamlit
+-   **Akses Data:** Datasets (dari Hugging Face)
+-   **Lingkungan:** Jupyter Notebook
