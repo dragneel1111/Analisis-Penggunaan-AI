@@ -1,4 +1,4 @@
-````markdown
+
 # 📊 Proyek Analisis Data Penggunaan LLM
 
 Proyek ini menganalisis data dari dataset **LMSYS Arena Human Preference** untuk memahami pola penggunaan, preferensi, dan performa berbagai model LLM (Large Language Models).  
@@ -6,7 +6,6 @@ Analisis dilakukan dalam dua bentuk:
 - **Notebook Jupyter (`Proyek_Analisis_Data.ipynb`)** → eksplorasi dan visualisasi.
 - **Dashboard Streamlit (`dashboard.py`)** → interaktif untuk tim bisnis/eksekutif.
 
----
 
 ## 🎯 Pertanyaan Bisnis
 
