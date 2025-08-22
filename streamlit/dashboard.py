@@ -169,12 +169,10 @@ with st.spinner("Memuat data..."):
     try:
         df_chat = load_chat1m(sample_chat)
     except Exception as e:
-        st.sidebar.warning(f"Gagal memuat Chat-1M: {e}")
         df_chat = pd.DataFrame(columns=["model", "conversation", "user_text", "is_solved", "topic_category", "turn"])
     try:
         df_arena, win_rate = load_arena(sample_arena)
     except Exception as e:
-        st.sidebar.warning(f"Gagal memuat Arena: {e}")
         df_arena = pd.DataFrame(columns=["model", "conversation", "user_text", "is_solved", "topic_category", "turn"])
         win_rate = pd.Series(dtype=float)
 
