@@ -20,8 +20,8 @@ warnings.filterwarnings(
 )
 
 # --- Hugging Face auth (ambil dari Streamlit Secrets / env var) ---
-# HF_TOKEN = st.secrets.get("HF_TOKEN", os.getenv("HF_TOKEN", ""))
-HF_TOKEN = "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"
+HF_TOKEN = st.secrets.get("HF_TOKEN", os.getenv("HF_TOKEN", ""))
+# HF_TOKEN = "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"
 
 if HF_TOKEN:
     try:
