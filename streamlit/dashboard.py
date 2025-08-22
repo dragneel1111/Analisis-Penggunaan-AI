@@ -6,6 +6,9 @@ import seaborn as sns
 from datasets import load_dataset
 import re
 import warnings
+from huggingface_hub import login
+import os
+
 
 # ---------- CONFIG & GLOBALS ----------
 st.set_page_config(page_title="Dashboard Analisis Data LLM", page_icon="🤖", layout="wide")
@@ -15,6 +18,20 @@ warnings.filterwarnings(
     message="The default of observed=False is deprecated and will be changed to True in a future version of pandas",
     category=FutureWarning,
 )
+
+# --- Hugging Face auth (ambil dari Streamlit Secrets / env var) ---
+HF_TOKEN = st.secrets.get("HF_TOKEN", os.getenv("HF_TOKEN", ""))
+
+if HF_TOKEN:
+    try:
+        # Login sesi ini (tidak menulis ke disk)
+        login(token=HF_TOKEN, add_to_git_credential=False)
+        st.sidebar.success("Authenticated to Hugging Face Hub.")
+    except Exception as e:
+        st.sidebar.warning(f"Gagal login HF: {e}")
+else:
+    st.sidebar.info("HF_TOKEN tidak ditemukan di Secrets/env. Dataset gated mungkin gagal dimuat.")
+
 
 OK_PAT = re.compile(
     r"(thanks|thank you|terima kasih|berhasil|works|solved|mantap|fixed?|oke+|ok|done|clear|yes|sip|resolved)",
@@ -69,16 +86,13 @@ def add_derived_columns(df: pd.DataFrame) -> pd.DataFrame:
 # ---------- DATA LOADERS ----------
 @st.cache_data(show_spinner=True, ttl=3600)
 def load_chat1m(sample_rows: int = 20000) -> pd.DataFrame:
-    """
-    lmsys/lmsys-chat-1m → gunakan untuk Popularitas & Topik.
-    Harapkan kolom: model, conversation (list of dict).
-    """
-    ds = load_dataset("lmsys/lmsys-chat-1m", split=f"train[:{sample_rows}]")
+    # Perhatikan: argumen yang dianjurkan adalah `token=...`
+    ds = load_dataset("lmsys/lmsys-chat-1m", split=f"train[:{sample_rows}]", token=HF_TOKEN if HF_TOKEN else None)
     df = pd.DataFrame(ds)
-    # Normalisasi minimal
     keep_cols = [c for c in ["model", "conversation"] if c in df.columns]
     df = df[keep_cols].dropna(subset=keep_cols)
     return add_derived_columns(df)
+
 
 @st.cache_data(show_spinner=True, ttl=3600)
 def load_arena(sample_rows: int = 40000):
