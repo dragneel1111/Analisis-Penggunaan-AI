@@ -1,4 +1,4 @@
-# dashboard.py
+# dashboard.py (versi auto-adapt skema)
 import os
 import re
 import warnings
@@ -20,9 +20,8 @@ warnings.filterwarnings(
     category=FutureWarning,
 )
 
-# Regex proxy 'beres'
 OK_PAT = re.compile(
-    r"(thanks|thank you|terima kasih|berhasil|works|solved|mantap|fixed?|oke+|ok|done|clear|yes|sip|resolved|great|perfect|mantap kali)",
+    r"(thanks|thank you|terima kasih|berhasil|works|solved|mantap|fixed?|oke+|ok|done|clear|yes|sip|resolved|great|perfect)",
     re.IGNORECASE,
 )
 
@@ -34,18 +33,15 @@ TOPIC_RULES = {
 }
 
 STOP = {
-    # EN
     "the","and","for","with","that","this","from","your","have","you","will","just","does","did","can","could",
     "would","there","here","into","them","then","than","what","when","where","which","some","about","like",
-    "been","were","they","their","them","ours","ourselves",
-    # ID
+    "been","were","they","their","ours","ourselves",
     "kami","kita","kamu","anda","yang","dengan","untuk","atau","dari","pada","dalam","akan","saya","dia",
     "itu","ini","bisa","tidak","iya","dan","atau","jadi","agar","karena","kalau","sehingga"
 }
 
 # -------------------- HELPERS --------------------
 def normalize_model_name(m: str) -> str:
-    """Normalisasi ringan agar agregasi model konsisten."""
     if m is None:
         return ""
     m = str(m).strip()
@@ -62,7 +58,7 @@ def _user_text_from_conv(conv):
             parts.append((msg.get("content") or "").strip())
     return " ".join(parts)
 
-def is_solved(conv) -> bool:
+def is_solved_from_conv(conv) -> bool:
     if not isinstance(conv, (list, tuple)):
         return False
     for msg in reversed(conv):
@@ -78,19 +74,7 @@ def topic_category_from_text(text: str) -> str:
             return label
     return "Lainnya"
 
-def add_derived_columns(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    # nama model
-    df["model_norm"] = df["model"].apply(normalize_model_name)
-    # teks user, status solved, topik, turn
-    df["user_text"] = df["conversation"].apply(_user_text_from_conv)
-    df["is_solved"] = df["conversation"].apply(is_solved)
-    df["topic_category"] = df["user_text"].apply(topic_category_from_text)
-    df["turn"] = df["conversation"].apply(lambda conv: len(conv) if isinstance(conv, (list, tuple)) else np.nan)
-    return df
-
 def wilson_ci(k: float, n: float, z: float = 1.96):
-    """Wilson score interval untuk proporsi."""
     if n <= 0:
         return (0.0, 0.0)
     p = k / n
@@ -105,20 +89,14 @@ def wilson_ci(k: float, n: float, z: float = 1.96):
 @st.cache_data(show_spinner=True, ttl=3600)
 def load_arena55k(sample_rows: int = 20000, local_path: str = "data/arena55k_sample.parquet"):
     """
-    Muat dataset publik: lmsys/lmsys-arena-human-preference-55k
-    Strategi:
-      1) Coba baca dari file lokal (parquet) kalau ada.
-      2) Kalau belum ada, coba unduh via HuggingFace datasets.
-      3) Kalau berhasil unduh, simpan ke lokal untuk run berikutnya.
-    Kembalikan:
-      - df_long (model, conversation + turunan),
-      - win_rate (Series),
-      - wr_df (wins/apps/wilson CI) untuk plot.
+    Muat dataset lmsys/lmsys-arena-human-preference-55k dengan dukungan 2 skema:
+    A) 'conversation_a/b' + 'winner_model' (klasik)
+    B) 'prompt' + 'response_a/b' + 'winner_model_a/b' + 'winner_tie' (pairwise)
     """
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
     df_raw = None
 
-    # 1) cache lokal
+    # 1) coba cache lokal
     if os.path.exists(local_path):
         try:
             df_raw = pd.read_parquet(local_path)
@@ -131,86 +109,122 @@ def load_arena55k(sample_rows: int = 20000, local_path: str = "data/arena55k_sam
         try:
             ds = load_dataset("lmsys/lmsys-arena-human-preference-55k", split="train")
             df_raw = pd.DataFrame(ds)
-            # simpan cache lokal (subset sesuai sample_rows agar file tidak terlalu besar)
-            if sample_rows and sample_rows < len(df_raw):
-                df_raw_to_save = df_raw.sample(sample_rows, random_state=42).reset_index(drop=True)
-            else:
-                df_raw_to_save = df_raw
-            df_raw_to_save.to_parquet(local_path, index=False)
+            # simpan subset ke cache lokal
+            df_save = df_raw.sample(sample_rows, random_state=42).reset_index(drop=True) if sample_rows and sample_rows < len(df_raw) else df_raw
+            df_save.to_parquet(local_path, index=False)
             st.sidebar.success("Dataset berhasil diunduh & disimpan sebagai cache lokal.")
         except Exception as e:
             st.error("Gagal memuat dataset dari internet dan tidak ada cache lokal.")
             st.exception(e)
-            return pd.DataFrame(columns=["model", "conversation"]), pd.Series(dtype=float), pd.DataFrame()
+            return pd.DataFrame(), pd.Series(dtype=float), pd.DataFrame(), {"schema": "none"}
 
-    # 3) subsample sesuai slider
+    # 3) subsample
     if sample_rows and sample_rows < len(df_raw):
         df_raw = df_raw.sample(sample_rows, random_state=42).reset_index(drop=True)
 
-    # 4) validasi skema
-    need_cols = {"model_a", "model_b", "conversation_a", "conversation_b"}
-    missing = need_cols - set(df_raw.columns)
-    if missing:
-        st.error(f"Skema dataset berbeda. Kolom yang hilang: {sorted(missing)}")
-        st.caption(f"Kolom tersedia: {sorted(df_raw.columns.tolist())[:40]} …")
-        return pd.DataFrame(columns=["model", "conversation"]), pd.Series(dtype=float), pd.DataFrame()
+    # 4) deteksi skema
+    has_conv = {"model_a","model_b","conversation_a","conversation_b"}.issubset(df_raw.columns)
+    has_pair = {"model_a","model_b","prompt","response_a","response_b","winner_model_a","winner_model_b","winner_tie"}.issubset(df_raw.columns)
 
-    # 5) normalisasi long
-    df_a = df_raw[["model_a", "conversation_a"]].rename(columns={"model_a": "model", "conversation_a": "conversation"})
-    df_b = df_raw[["model_b", "conversation_b"]].rename(columns={"model_b": "model", "conversation_b": "conversation"})
-    df_long = pd.concat([df_a, df_b], ignore_index=True)
-    df_long.dropna(subset=["model", "conversation"], inplace=True)
-    df_long = add_derived_columns(df_long)
+    meta = {}
+    if has_conv:
+        meta["schema"] = "conversation"
+        # long conversations
+        df_a = df_raw[["model_a", "conversation_a"]].rename(columns={"model_a":"model","conversation_a":"conversation"})
+        df_b = df_raw[["model_b", "conversation_b"]].rename(columns={"model_b":"model","conversation_b":"conversation"})
+        df_long = pd.concat([df_a, df_b], ignore_index=True)
+        df_long.dropna(subset=["model","conversation"], inplace=True)
 
-    # 6) win-rate (dukung 2 skema 'winner')
-    if "winner_model" in df_raw.columns:
-        wins = df_raw["winner_model"].value_counts()
-    elif "winner" in df_raw.columns:
-        wins_a = df_raw.loc[df_raw["winner"] == "model_a", "model_a"].value_counts()
-        wins_b = df_raw.loc[df_raw["winner"] == "model_b", "model_b"].value_counts()
-        wins = wins_a.add(wins_b, fill_value=0)
+        # win-rate
+        if "winner_model" in df_raw.columns:
+            wins = df_raw["winner_model"].value_counts()
+        elif "winner" in df_raw.columns:
+            wins_a = df_raw.loc[df_raw["winner"]=="model_a","model_a"].value_counts()
+            wins_b = df_raw.loc[df_raw["winner"]=="model_b","model_b"].value_counts()
+            wins = wins_a.add(wins_b, fill_value=0)
+        else:
+            wins = pd.Series(dtype=float)
+
+        apps = df_raw["model_a"].value_counts().add(df_raw["model_b"].value_counts(), fill_value=0)
+
+        # turunan
+        df_long["model_norm"] = df_long["model"].apply(normalize_model_name)
+        df_long["user_text"] = df_long["conversation"].apply(_user_text_from_conv)
+        df_long["is_solved"] = df_long["conversation"].apply(is_solved_from_conv)
+        df_long["topic_category"] = df_long["user_text"].apply(topic_category_from_text)
+        df_long["turn"] = df_long["conversation"].apply(lambda conv: len(conv) if isinstance(conv,(list,tuple)) else np.nan)
+
+    elif has_pair:
+        meta["schema"] = "pairwise"
+        # bentuk percakapan sintetis: [user: prompt, assistant: response_x]
+        df_a = df_raw[["model_a","prompt","response_a","winner_model_a","winner_tie"]].copy()
+        df_b = df_raw[["model_b","prompt","response_b","winner_model_b","winner_tie"]].copy()
+        df_a.rename(columns={"model_a":"model","response_a":"response","winner_model_a":"won"}, inplace=True)
+        df_b.rename(columns={"model_b":"model","response_b":"response","winner_model_b":"won"}, inplace=True)
+
+        df_a["conversation"] = df_a.apply(lambda r: [{"role":"user","content":r["prompt"]},{"role":"assistant","content":r["response"]}], axis=1)
+        df_b["conversation"] = df_b.apply(lambda r: [{"role":"user","content":r["prompt"]"},{"role":"assistant","content":r["response"]}], axis=1)
+
+        # jika tie, set won=False untuk keduanya
+        df_a.loc[df_a["winner_tie"]==1, "won"] = 0
+        df_b.loc[df_b["winner_tie"]==1, "won"] = 0
+
+        df_long = pd.concat([df_a[["model","conversation","won"]], df_b[["model","conversation","won"]]], ignore_index=True)
+        df_long.dropna(subset=["model","conversation"], inplace=True)
+
+        # win-rate & appearances
+        wins = df_long.groupby("model")["won"].sum(min_count=1)
+        apps = df_long["model"].value_counts()
+
+        # turunan
+        df_long["model_norm"] = df_long["model"].apply(normalize_model_name)
+        df_long["user_text"] = df_long["conversation"].apply(_user_text_from_conv)
+        # gunakan 'won' sebagai proxy solved (tidak ideal, tapi konsisten untuk heatmap)
+        df_long["is_solved"] = df_long["won"].fillna(0).astype(int) == 1
+        df_long["topic_category"] = df_long["user_text"].apply(topic_category_from_text)
+        df_long["turn"] = 2  # prompt + satu balasan (pairwise)
+
+        meta["tts_note"] = "Skema pairwise hanya 1 balasan per model → TTS ≈ 2 (kurang informatif)."
+
     else:
-        wins = pd.Series(dtype=float)
+        st.error("Skema dataset tidak dikenali. Kolom kunci tidak ditemukan.")
+        st.caption(f"Kolom tersedia: {sorted(df_raw.columns.tolist())[:40]} …")
+        return pd.DataFrame(), pd.Series(dtype=float), pd.DataFrame(), {"schema":"unknown"}
 
-    appearances = df_raw["model_a"].value_counts().add(df_raw["model_b"].value_counts(), fill_value=0)
+    # normalisasi index untuk win-rate
+    wins.index = wins.index.astype(str).map(normalize_model_name)
+    apps.index = apps.index.astype(str).map(normalize_model_name)
+    win_rate = (wins / apps).dropna().sort_values(ascending=False)
 
-    # normalisasi index
-    wins.index = wins.index.astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
-    appearances.index = appearances.index.astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
-
-    win_rate = (wins / appearances).dropna().sort_values(ascending=False)
-
-    # table detail untuk plot + Wilson CI
-    wr_df = pd.DataFrame({"wins": wins, "apps": appearances}).fillna(0)
-    wr_df["win_rate"] = wr_df.apply(lambda r: (r["wins"] / r["apps"]) if r["apps"] > 0 else np.nan, axis=1)
-    wr_df[["wr_lo", "wr_hi"]] = wr_df.apply(lambda r: pd.Series(wilson_ci(r["wins"], r["apps"])), axis=1)
+    # tabel win-rate detail + Wilson CI
+    wr_df = pd.DataFrame({"wins": wins, "apps": apps}).fillna(0)
+    wr_df["win_rate"] = wr_df.apply(lambda r: (r["wins"]/r["apps"]) if r["apps"]>0 else np.nan, axis=1)
+    wr_df[["wr_lo","wr_hi"]] = wr_df.apply(lambda r: pd.Series(wilson_ci(r["wins"], r["apps"])), axis=1)
     wr_df.index.name = "model_norm"
 
-    return df_long, win_rate, wr_df
+    return df_long, win_rate, wr_df, meta
 
 # -------------------- COMPUTATION (cached) --------------------
 @st.cache_data(show_spinner=True, ttl=1200)
 def compute_topics_ngram(df: pd.DataFrame, top_k: int = 20) -> pd.DataFrame:
-    """Topik n-gram sederhana (uni+bi‑gram) dari pesan user."""
     if df.empty:
         return pd.DataFrame(columns=["Kata Kunci", "Frekuensi"])
     texts = df["user_text"].astype(str).tolist()
     all_text = " ".join(texts).lower()
     tokens = re.findall(r"[a-zA-Z]{3,}", all_text)
     tokens = [w for w in tokens if w not in STOP]
-    bigrams = [" ".join(tokens[i:i+2]) for i in range(len(tokens) - 1)]
+    bigrams = [" ".join(tokens[i:i+2]) for i in range(len(tokens)-1)]
     merged = tokens + bigrams
     vc = pd.Series(merged).value_counts().head(top_k)
     return pd.DataFrame({"Kata Kunci": vc.index, "Frekuensi": vc.values})
 
 @st.cache_data(show_spinner=True, ttl=1200)
 def compute_tts(df_in: pd.DataFrame, min_turn: int = 3) -> pd.DataFrame:
-    """Hitung TTS (hanya percakapan 'beres' dan turn >= min_turn)."""
     if df_in.empty:
-        return pd.DataFrame(columns=["n_solved", "mean", "median", "p75"])
+        return pd.DataFrame(columns=["n_solved","mean","median","p75"])
     df_use = df_in[(df_in["is_solved"]) & (df_in["turn"].fillna(0) >= min_turn)]
     if df_use.empty:
-        return pd.DataFrame(columns=["n_solved", "mean", "median", "p75"])
+        return pd.DataFrame(columns=["n_solved","mean","median","p75"])
     tts = (
         df_use.groupby("model_norm", observed=True)["turn"]
         .agg(n_solved="count", mean="mean", median="median", p75=lambda s: s.quantile(0.75))
@@ -219,15 +233,14 @@ def compute_tts(df_in: pd.DataFrame, min_turn: int = 3) -> pd.DataFrame:
     return tts
 
 @st.cache_data(show_spinner=True, ttl=1200)
-def compute_fit_for_purpose(df_in: pd.DataFrame, top_n_models: int = 8) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Perf heatmap: solved_rate & N untuk kombinasi topik × model."""
+def compute_fit_for_purpose(df_in: pd.DataFrame, top_n_models: int = 8):
     if df_in.empty:
         return pd.DataFrame(), pd.DataFrame()
     top_models = df_in["model_norm"].value_counts().head(int(top_n_models)).index
     perf = (
         df_in[df_in["model_norm"].isin(top_models)]
-        .groupby(["topic_category", "model_norm"], observed=True)
-        .agg(n=("model_norm", "size"), solved_rate=("is_solved", "mean"))
+        .groupby(["topic_category","model_norm"], observed=True)
+        .agg(n=("model_norm","size"), solved_rate=("is_solved","mean"))
         .reset_index()
     )
     heat = perf.pivot(index="topic_category", columns="model_norm", values="solved_rate")
@@ -235,7 +248,7 @@ def compute_fit_for_purpose(df_in: pd.DataFrame, top_n_models: int = 8) -> tuple
 
 # -------------------- SIDEBAR --------------------
 st.sidebar.header("⚙️ Pengaturan")
-sample_rows = st.sidebar.slider("Sample rows (Arena 55k)", 5_000, 50_000, 20_000, step=5_000)
+sample_rows = st.sidebar.slider("Sample rows", 5_000, 50_000, 20_000, step=5_000)
 min_turn = st.sidebar.number_input("Minimal turn untuk TTS", 1, 10, 3, 1)
 top_n_pop = st.sidebar.slider("Top‑N Model (popularitas)", 5, 30, 12, 1)
 top_n_heat = st.sidebar.slider("Top‑N Model (heatmap)", 4, 20, 8, 1)
@@ -244,13 +257,13 @@ min_n_leader = st.sidebar.slider("Ambang N juara per topik", 10, 200, 30, 5)
 # -------------------- LOAD DATA --------------------
 with st.spinner("Memuat & menyiapkan data..."):
     try:
-        df_long, win_rate_series, wr_df = load_arena55k(sample_rows)
+        df_long, win_rate_series, wr_df, meta = load_arena55k(sample_rows)
     except Exception as e:
-        st.error("Gagal memuat dataset (error tak terduga). Lihat detail di bawah.")
+        st.error("Gagal memuat dataset (error tak terduga).")
         st.exception(e)
-        df_long, win_rate_series, wr_df = pd.DataFrame(), pd.Series(dtype=float), pd.DataFrame()
+        df_long, win_rate_series, wr_df, meta = pd.DataFrame(), pd.Series(dtype=float), pd.DataFrame(), {"schema":"none"}
 
-n_total_rows = len(df_long)
+schema = meta.get("schema","none")
 
 # Filter global model
 all_models = sorted(df_long["model_norm"].dropna().unique().tolist()) if not df_long.empty else []
@@ -266,14 +279,14 @@ def apply_model_filter(df: pd.DataFrame) -> pd.DataFrame:
 
 df_f = apply_model_filter(df_long)
 
-# -------------------- SECTION 1: Popularitas Model --------------------
+# -------------------- SECTION 1: Popularitas --------------------
 st.header("1) Popularitas Model")
 if df_f.empty:
-    st.info("Data kosong. Silakan perbesar sample rows / periksa koneksi.")
+    st.info("Data kosong. Perbesar sample rows / periksa koneksi.")
 else:
     order = df_f["model_norm"].value_counts().head(top_n_pop).index
     df_pop = df_f[df_f["model_norm"].isin(order)]
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(10,5))
     sns.countplot(data=df_pop, x="model_norm", order=order, ax=ax, palette="cividis")
     ax.set_title("Popularitas Model (berdasar jumlah percakapan)")
     ax.set_xlabel("Model"); ax.set_ylabel("Jumlah Percakapan")
@@ -281,7 +294,7 @@ else:
     st.pyplot(fig)
     st.caption(f"N efektif: {len(df_pop):,} percakapan | Model unik: {len(order)}")
 
-# -------------------- SECTION 2: Topik Utama (n‑gram) --------------------
+# -------------------- SECTION 2: Topik n‑gram --------------------
 st.header("2) Topik Utama Pengguna (Unigram + Bigram)")
 if df_f.empty:
     st.info("Data kosong. Tidak dapat menganalisis topik.")
@@ -290,13 +303,13 @@ else:
     if df_topics.empty:
         st.info("Tidak ada kata kunci yang cukup untuk ditampilkan.")
     else:
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(10,6))
         sns.barplot(data=df_topics, x="Frekuensi", y="Kata Kunci", ax=ax, palette="cividis")
         ax.set_title("Top 20 N‑gram dari Pesan Pengguna")
         st.pyplot(fig)
         st.caption(f"N efektif: {len(df_f):,} percakapan | Token unik terpilih: {len(df_topics)}")
 
-# -------------------- SECTION 3: Win‑Rate (dengan Wilson CI) --------------------
+# -------------------- SECTION 3: Win‑Rate (Wilson CI) --------------------
 st.header("3) Win‑Rate per Model (dengan Wilson CI)")
 if wr_df.empty:
     st.info("Informasi win‑rate tidak tersedia pada sample saat ini.")
@@ -305,8 +318,7 @@ else:
     if selected_models:
         wr_view = wr_view.loc[wr_view.index.intersection(selected_models)]
     wr_view = wr_view.sort_values("win_rate", ascending=False)
-    # Plot dengan error bars
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(10,5))
     x = np.arange(len(wr_view))
     ax.errorbar(
         x, wr_view["win_rate"].values,
@@ -321,8 +333,10 @@ else:
     st.pyplot(fig)
     st.caption(f"N pasangan kompetisi (apps) total: {int(wr_view['apps'].sum()):,}")
 
-# -------------------- SECTION 4: TTS (Turns‑to‑Solve) --------------------
+# -------------------- SECTION 4: TTS --------------------
 st.header("4) Turns‑to‑Solve (TTS)")
+if schema == "pairwise":
+    st.info("Catatan: skema pairwise hanya 1 balasan per model → TTS ≈ 2 turn (kurang informatif).")
 if df_f.empty:
     st.info("Data kosong. Tidak bisa menghitung TTS.")
 else:
@@ -332,7 +346,7 @@ else:
     st.download_button("⬇️ Unduh TTS (CSV)", tts_stats.to_csv().encode(), "tts_stats.csv", "text/csv")
 
     if not tts_stats.empty:
-        fig, ax = plt.subplots(figsize=(10, 5))
+        fig, ax = plt.subplots(figsize=(10,5))
         order = tts_stats.index.tolist()
         sns.barplot(x=tts_stats.index, y=tts_stats["median"], order=order, ax=ax, palette="cividis")
         ax.set_xlabel(""); ax.set_ylabel("Median TTS (turn)")
@@ -340,11 +354,12 @@ else:
         plt.xticks(rotation=20, ha="right")
         for i, model_name in enumerate(order):
             n = int(tts_stats.loc[model_name, "n_solved"])
-            ax.text(i, float(tts_stats.loc[model_name, "median"]) + 0.1, f"n={n}", ha="center", va="bottom", fontsize=9)
+            ax.text(i, float(tts_stats.loc[model_name, "median"]) + 0.1, f"n={n}",
+                    ha="center", va="bottom", fontsize=9)
         st.pyplot(fig)
         st.caption(f"N efektif (percakapan 'beres' & turn ≥ {min_turn}): {int(tts_stats['n_solved'].sum()):,}")
 
-# -------------------- SECTION 5: Fit‑for‑Purpose (Model × Topik) --------------------
+# -------------------- SECTION 5: Fit‑for‑Purpose --------------------
 st.header("5) Fit‑for‑Purpose: Model × Topik")
 if df_f.empty:
     st.info("Data kosong. Tidak bisa membuat heatmap.")
@@ -353,35 +368,33 @@ else:
     if heat.empty:
         st.info("Data tidak mencukupi untuk heatmap.")
     else:
-        fig, ax = plt.subplots(figsize=(min(12, 2 + 1.2 * len(heat.columns)), 6))
+        fig, ax = plt.subplots(figsize=(min(12, 2 + 1.2*len(heat.columns)), 6))
         sns.heatmap(heat.fillna(0), cmap="cividis", vmin=0, vmax=1, annot=True, fmt=".0%")
         ax.set_xlabel("Model"); ax.set_ylabel("Kategori Topik")
         ax.set_title("Solved Rate (Proxy) — Model × Topik")
         st.pyplot(fig)
 
-        # Juara per topik dengan ambang N
         leaders = (
             perf[perf["n"] >= int(min_n_leader)]
-            .sort_values(["topic_category", "solved_rate"], ascending=[True, False])
-            .groupby("topic_category", observed=True)
-            .head(1)
-            .reset_index(drop=True)
+            .sort_values(["topic_category","solved_rate"], ascending=[True, False])
+            .groupby("topic_category", observed=True).head(1).reset_index(drop=True)
         )
         st.caption(f"Ambang keandalan: hanya sel dengan N ≥ {int(min_n_leader)} dipertimbangkan.")
         if leaders.empty:
             st.info("Belum ada topik yang memenuhi ambang N.")
         else:
-            leaders_show = leaders.assign(solved_rate=(leaders["solved_rate"] * 100).round(1)).rename(
-                columns={"topic_category": "Topik", "model_norm": "Model", "n": "N", "solved_rate": "Solved Rate (%)"}
-            )[["Topik", "model_norm", "N", "Solved Rate (%)"]].rename(columns={"model_norm": "Model"})
+            leaders_show = leaders.assign(solved_rate=(leaders["solved_rate"]*100).round(1)).rename(
+                columns={"topic_category":"Topik","model_norm":"Model","n":"N","solved_rate":"Solved Rate (%)"}
+            )[["Topik","Model","N","Solved Rate (%)"]]
             st.subheader("🏆 Juara per Topik")
             st.dataframe(leaders_show)
-            st.download_button("⬇️ Unduh Perf Heatmap (CSV)", perf.to_csv(index=False).encode(), "fit_for_purpose.csv", "text/csv")
-            st.download_button("⬇️ Unduh Juara per Topik (CSV)", leaders_show.to_csv(index=False).encode(), "leaders_per_topic.csv", "text/csv")
+            st.download_button("⬇️ Unduh Perf Heatmap (CSV)", perf.to_csv(index=False).encode(),
+                               "fit_for_purpose.csv", "text/csv")
+            st.download_button("⬇️ Unduh Juara per Topik (CSV)", leaders_show.to_csv(index=False).encode(),
+                               "leaders_per_topic.csv", "text/csv")
 
 # -------------------- FOOTER --------------------
 st.markdown("---")
-st.caption(
-    "Analisis Data Penggunaan LLM — Streamlit Dashboard · "
-    "Metric proxy: 'Solved' berbasis sinyal bahasa; gunakan ambang N untuk reliabilitas."
-)
+schema_note = "Skema: Pairwise (prompt+1 balasan/model)" if schema=="pairwise" else ("Skema: Conversation multi-turn" if schema=="conversation" else "Skema: Unknown")
+st.caption(f"Analisis Data Penggunaan LLM — Streamlit Dashboard · {schema_note} · "
+           "Metric proxy: 'Solved' berbasis sinyal bahasa/pemenang; gunakan ambang N untuk reliabilitas.")
