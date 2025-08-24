@@ -219,18 +219,25 @@ def compute_topics_ngram(df: pd.DataFrame, top_k: int = 20) -> pd.DataFrame:
     return pd.DataFrame({"Kata Kunci": vc.index, "Frekuensi": vc.values})
 
 @st.cache_data(show_spinner=True, ttl=1200)
-def compute_tts(df_in: pd.DataFrame, min_turn: int = 3) -> pd.DataFrame:
+def compute_tts(df_in: pd.DataFrame, min_turn: int = 3, schema: str = "conversation") -> pd.DataFrame:
+    """
+    Hitung TTS.
+    - conversation: gunakan ambang min_turn (default 3)
+    - pairwise: paksa ambang efektif = 2 (karena hanya prompt+1 balasan)
+    """
     if df_in.empty:
-        return pd.DataFrame(columns=["n_solved","mean","median","p75"])
-    df_use = df_in[(df_in["is_solved"]) & (df_in["turn"].fillna(0) >= min_turn)]
+        return pd.DataFrame(columns=["n_solved", "mean", "median", "p75"])
+    eff_min = 2 if schema == "pairwise" else min_turn
+    df_use = df_in[(df_in["is_solved"]) & (df_in["turn"].fillna(0) >= eff_min)]
     if df_use.empty:
-        return pd.DataFrame(columns=["n_solved","mean","median","p75"])
+        return pd.DataFrame(columns=["n_solved", "mean", "median", "p75"])
     tts = (
         df_use.groupby("model_norm", observed=True)["turn"]
         .agg(n_solved="count", mean="mean", median="median", p75=lambda s: s.quantile(0.75))
         .sort_values("median")
     )
     return tts
+
 
 @st.cache_data(show_spinner=True, ttl=1200)
 def compute_fit_for_purpose(df_in: pd.DataFrame, top_n_models: int = 8):
@@ -340,24 +347,10 @@ if schema == "pairwise":
 if df_f.empty:
     st.info("Data kosong. Tidak bisa menghitung TTS.")
 else:
-    tts_stats = compute_tts(df_f, min_turn=min_turn)
-    st.subheader("Ringkasan TTS per Model")
-    st.dataframe(tts_stats.round(2))
-    st.download_button("⬇️ Unduh TTS (CSV)", tts_stats.to_csv().encode(), "tts_stats.csv", "text/csv")
+    tts_stats = compute_tts(df_f, min_turn=min_turn, schema=schema)
+    eff_min = 2 if schema == "pairwise" else min_turn
+    st.caption(f"N efektif (percakapan 'beres' & turn ≥ {eff_min}): {int(tts_stats['n_solved'].sum()):,}")
 
-    if not tts_stats.empty:
-        fig, ax = plt.subplots(figsize=(10,5))
-        order = tts_stats.index.tolist()
-        sns.barplot(x=tts_stats.index, y=tts_stats["median"], order=order, ax=ax, palette="cividis")
-        ax.set_xlabel(""); ax.set_ylabel("Median TTS (turn)")
-        ax.set_title("Median TTS per Model (lebih kecil lebih baik)")
-        plt.xticks(rotation=20, ha="right")
-        for i, model_name in enumerate(order):
-            n = int(tts_stats.loc[model_name, "n_solved"])
-            ax.text(i, float(tts_stats.loc[model_name, "median"]) + 0.1, f"n={n}",
-                    ha="center", va="bottom", fontsize=9)
-        st.pyplot(fig)
-        st.caption(f"N efektif (percakapan 'beres' & turn ≥ {min_turn}): {int(tts_stats['n_solved'].sum()):,}")
 
 # -------------------- SECTION 5: Fit‑for‑Purpose --------------------
 st.header("5) Fit‑for‑Purpose: Model × Topik")
