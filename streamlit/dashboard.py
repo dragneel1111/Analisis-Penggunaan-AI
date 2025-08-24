@@ -163,7 +163,7 @@ def load_arena55k(sample_rows: int = 20000, local_path: str = "data/arena55k_sam
         df_b.rename(columns={"model_b":"model","response_b":"response","winner_model_b":"won"}, inplace=True)
 
         df_a["conversation"] = df_a.apply(lambda r: [{"role":"user","content":r["prompt"]},{"role":"assistant","content":r["response"]}], axis=1)
-        df_b["conversation"] = df_b.apply(lambda r: [{"role":"user","content":r["prompt"]"},{"role":"assistant","content":r["response"]}], axis=1)
+        df_b["conversation"] = df_b.apply(lambda r: [{"role":"user","content":r["prompt"]},{"role":"assistant","content":r["response"]}], axis=1)
 
         # jika tie, set won=False untuk keduanya
         df_a.loc[df_a["winner_tie"]==1, "won"] = 0
