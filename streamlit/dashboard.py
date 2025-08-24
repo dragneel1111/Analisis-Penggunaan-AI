@@ -103,31 +103,115 @@ def wilson_ci(k: float, n: float, z: float = 1.96):
 
 # -------------------- DATA LOADERS --------------------
 @st.cache_data(show_spinner=True, ttl=3600)
-def load_arena55k(sample_rows: int = 20000):
+def load_arena55k(sample_rows: int = 20000, local_path: str = "data/arena55k_sample.parquet"):
     """
     Muat dataset publik: lmsys/lmsys-arena-human-preference-55k
-    Normalisasi:
-      - df_long: kolom (model, conversation) dari A & B (untuk topik, TTS, heatmap)
-      - win_rate: Series per model (dari winner info)
-    Kompatibel dengan dua kemungkinan skema: 'winner_model' (nama pemenang)
-    atau 'winner' (label 'model_a'/'model_b').
+    Strategi:
+      1) Coba baca dari file lokal (parquet) kalau ada.
+      2) Kalau belum ada, coba unduh via HuggingFace datasets.
+      3) Kalau berhasil unduh, simpan ke lokal untuk run berikutnya.
+    Kembalikan:
+      - df_long (model, conversation + turunan),
+      - win_rate (Series),
+      - wr_df (wins/apps/wilson CI) untuk plot.
     """
-    ds = load_dataset("lmsys/lmsys-arena-human-preference-55k", split="train")
-    df_raw = pd.DataFrame(ds)
+    import os
+    from datasets import load_dataset
+
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+
+    # ---------- 1) Coba cache lokal ----------
+    if os.path.exists(local_path):
+        try:
+            df_raw = pd.read_parquet(local_path)
+            st.sidebar.success(f"Memakai cache lokal: {local_path}")
+        except Exception as e:
+            st.sidebar.warning(f"Gagal baca cache lokal: {e}")
+            df_raw = None
+    else:
+        df_raw = None
+
+    # ---------- 2) Kalau belum ada, unduh ----------
+    if df_raw is None:
+        try:
+            ds = load_dataset("lmsys/lmsys-arena-human-preference-55k", split="train")
+            df_raw = pd.DataFrame(ds)
+            # simpan cache lokal kecil biar cepat di run berikutnya
+            if sample_rows and sample_rows < len(df_raw):
+                df_raw_to_save = df_raw.sample(sample_rows, random_state=42).reset_index(drop=True)
+            else:
+                df_raw_to_save = df_raw
+            df_raw_to_save.to_parquet(local_path, index=False)
+            st.sidebar.success("Dataset berhasil diunduh & disimpan sebagai cache lokal.")
+        except Exception as e:
+            st.error("Gagal memuat dataset dari internet dan tidak ada cache lokal.")
+            st.exception(e)
+            # Kembalikan struktur kosong agar UI tetap hidup
+            return pd.DataFrame(columns=["model", "conversation"]), pd.Series(dtype=float), pd.DataFrame()
+
+    # ---------- 3) Subsample sesuai slider ----------
     if sample_rows and sample_rows < len(df_raw):
         df_raw = df_raw.sample(sample_rows, random_state=42).reset_index(drop=True)
 
-    # Long conversations
+    # ---------- 4) Validasi skema ----------
     need_cols = {"model_a", "model_b", "conversation_a", "conversation_b"}
-    if not need_cols.issubset(df_raw.columns):
-        # skema tidak cocok
+    missing = need_cols - set(df_raw.columns)
+    if missing:
+        st.error(f"Skema dataset berbeda. Kolom yang hilang: {sorted(missing)}")
+        st.caption(f"Kolom tersedia: {sorted(df_raw.columns.tolist())[:40]} …")
         return pd.DataFrame(columns=["model", "conversation"]), pd.Series(dtype=float), pd.DataFrame()
 
+    # ---------- 5) Normalisasi jadi long ----------
     df_a = df_raw[["model_a", "conversation_a"]].rename(columns={"model_a": "model", "conversation_a": "conversation"})
     df_b = df_raw[["model_b", "conversation_b"]].rename(columns={"model_b": "model", "conversation_b": "conversation"})
     df_long = pd.concat([df_a, df_b], ignore_index=True)
     df_long.dropna(subset=["model", "conversation"], inplace=True)
-    df_long = add_derived_columns(df_long)
+
+    # turunan
+    df_long["model_norm"] = df_long["model"].astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
+    df_long["user_text"] = df_long["conversation"].apply(_user_text_from_conv)
+    df_long["is_solved"] = df_long["conversation"].apply(is_solved)
+    df_long["topic_category"] = df_long["user_text"].apply(topic_category_from_text)
+    df_long["turn"] = df_long["conversation"].apply(lambda conv: len(conv) if isinstance(conv, (list, tuple)) else np.nan)
+
+    # ---------- 6) Hitung win-rate (support 2 skema winner) ----------
+    if "winner_model" in df_raw.columns:
+        wins = df_raw["winner_model"].value_counts()
+    elif "winner" in df_raw.columns:
+        wins_a = df_raw.loc[df_raw["winner"] == "model_a", "model_a"].value_counts()
+        wins_b = df_raw.loc[df_raw["winner"] == "model_b", "model_b"].value_counts()
+        wins = wins_a.add(wins_b, fill_value=0)
+    else:
+        wins = pd.Series(dtype=float)
+
+    appearances = df_raw["model_a"].value_counts().add(df_raw["model_b"].value_counts(), fill_value=0)
+
+    # normalisasi index
+    wins.index = wins.index.astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
+    appearances.index = appearances.index.astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
+
+    win_rate = (wins / appearances).dropna().sort_values(ascending=False)
+
+    # table detail untuk plot + Wilson CI
+    def wilson_ci(k, n, z=1.96):
+        if n <= 0:
+            return (0.0, 0.0)
+        p = k / n
+        denom = 1 + z * z / n
+        centre = p + z * z / (2 * n)
+        from math import sqrt
+        adj = z * sqrt((p * (1 - p) + z * z / (4 * n)) / n)
+        lo = (centre - adj) / denom
+        hi = (centre + adj) / denom
+        return lo, hi
+
+    wr_df = pd.DataFrame({"wins": wins, "apps": appearances}).fillna(0)
+    wr_df["win_rate"] = wr_df.apply(lambda r: (r["wins"] / r["apps"]) if r["apps"] > 0 else np.nan, axis=1)
+    wr_df[["wr_lo", "wr_hi"]] = wr_df.apply(lambda r: pd.Series(wilson_ci(r["wins"], r["apps"])), axis=1)
+    wr_df.index.name = "model_norm"
+
+    return df_long, win_rate, wr_df
+
 
     # Win-rate
     # Skema 1: langsung kolom 'winner_model' berisi nama model (ideal)
