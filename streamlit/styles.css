@@ -3,3 +3,13 @@
 .stCol {
     width: 710px; /* Sesuaikan dengan lebar yang Anda inginkan */
 }
+
+table.dataframe {
+    font-size: 14px;
+    border-collapse: collapse;
+}
+table.dataframe th, table.dataframe td {
+    padding: 8px;
+    text-align: center;
+}
+
