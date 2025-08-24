@@ -1,80 +1,77 @@
+# 📊 Analisis Data Penggunaan LLM
 
-# 📊 Proyek Analisis Data Penggunaan LLM
-
-Proyek ini menganalisis data dari dataset **LMSYS Arena Human Preference** untuk memahami pola penggunaan, preferensi, dan performa berbagai model LLM (Large Language Models).  
-Analisis dilakukan dalam dua bentuk:
-- **Notebook Jupyter (`Proyek_Analisis_Data.ipynb`)** → eksplorasi dan visualisasi.
-- **Dashboard Streamlit (`dashboard.py`)** → interaktif untuk tim bisnis/eksekutif.
-
-
-## 🎯 Pertanyaan Bisnis
-
-Analisis ini difokuskan untuk menjawab **5 pertanyaan utama**:
-
-1. **Popularitas Model**  
-   - Model mana yang paling sering digunakan/dipilih oleh user?  
-   - Visualisasi: *Countplot Popularitas Model*.
-
-2. **Topik yang Dibahas**  
-   - Apa kata kunci/topik utama dalam percakapan user dengan LLM?  
-   - Visualisasi: *Bar chart kata kunci teratas*.
-
-3. **Pola Interaksi & Preferensi (Win-Rate vs Panjang Percakapan)**  
-   - Apakah model dengan win-rate tinggi juga cenderung menghasilkan percakapan lebih panjang/pendek?  
-   - Visualisasi: *Scatterplot Win-Rate vs Avg Turns*.
-
-4. **Turns-to-Solve (TTS)**  
-   - Rata-rata/median berapa **giliran (turn)** dibutuhkan sampai percakapan dianggap **“beres”**?  
-   - Proxy “beres” = sinyal bahasa dari user (*thanks, terima kasih, berhasil, works, resolved*).  
-   - Visualisasi: *Tabel ringkasan & bar chart median TTS per model*.
-
-5. **Fit-for-Purpose (Model × Topik)**  
-   - Model mana yang unggul pada kategori tugas tertentu: **Coding, Penulisan, Analisis Data, Terjemahan**?  
-   - Metrik: **Solved Rate (proxy)** = proporsi percakapan yang berujung “beres” pada kombinasi *model × topik*.  
-   - Visualisasi: *Heatmap Model × Topik + tabel juara per topik*.
+Proyek ini menganalisis penggunaan **Large Language Models (LLM)** menggunakan dataset publik **[lmsys/lmsys-arena-human-preference-55k](https://huggingface.co/datasets/lmsys/lmsys-arena-human-preference-55k)**.  
+Analisis dilakukan dalam bentuk **Jupyter Notebook** dan **Streamlit Dashboard** interaktif.
 
 ---
 
-## 🛠️ Metodologi Singkat
-
-- Dataset: `lmsys/lmsys-arena-human-preference-55k` dari HuggingFace.  
-- Preprocessing:
-  - Normalisasi teks user.  
-  - Ekstraksi kata kunci untuk topik.  
-  - Labelisasi **status “beres”** berdasarkan pola bahasa.  
-  - Kategorisasi topik rule-based (Coding, Analisis Data, Terjemahan, Penulisan).  
-- Analisis:
-  - Popularitas model (frekuensi).  
-  - Topik percakapan (word frequency).  
-  - Win-rate dihitung dari proporsi kemenangan per model.  
-  - **TTS** dihitung dari median jumlah giliran pada percakapan yang berujung “beres”.  
-  - **Solved Rate per Model × Topik** dihitung sebagai indikator kecocokan model per kategori tugas.  
-
-> **Catatan:**  
-> - Status “beres” adalah **proxy** sederhana berbasis pola bahasa; bukan ground-truth.  
-> - Kategori topik masih berbasis rule sederhana → bisa dikembangkan ke BERTopic / embedding-based clustering.  
-> - Untuk reliabilitas, hasil heatmap & juara per topik hanya ditampilkan jika **N ≥ 30**.
+## 🚀 Fitur Analisis
+1. **Popularitas Model** – model mana yang paling sering digunakan.  
+2. **Topik Utama (n-gram)** – kata kunci/tema terbanyak dari pesan pengguna.  
+3. **Win-Rate (dengan Wilson CI)** – model mana yang lebih disukai pengguna.  
+4. **Turns-to-Solve (TTS)** – efisiensi model dalam menyelesaikan percakapan.  
+5. **Fit-for-Purpose (Model × Topik)** – model unggul per kategori tugas (Coding, Penulisan, Analisis Data, Terjemahan).  
 
 ---
 
-## 💻 Teknologi yang Dipakai
-
-- Python 3.x  
-- [pandas](https://pandas.pydata.org/)  
-- [matplotlib](https://matplotlib.org/) & [seaborn](https://seaborn.pydata.org/)  
-- [Streamlit](https://streamlit.io/)  
-- [datasets (HuggingFace)](https://huggingface.co/docs/datasets)
-
----
+## 🛠️ Teknologi
+- Python (Pandas, NumPy, Matplotlib, Seaborn)
+- [Hugging Face Datasets](https://huggingface.co/docs/datasets/)
+- Streamlit
+- Jupyter Notebook
 
 
-## 📌 Kesimpulan Umum
+## ▶️ Cara Menjalankan
 
-* Model populer didominasi oleh beberapa nama besar, dengan distribusi penggunaan yang tidak merata.
-* Topik percakapan menegaskan tren coding, penulisan, dan analisis data.
-* Win-rate tidak selalu sejalan dengan panjang percakapan → efisiensi berbeda-beda.
-* **TTS** memberi gambaran model mana yang lebih cepat membantu user menyelesaikan tugas.
-* **Fit-for-Purpose heatmap** membuka peluang *routing otomatis* & bundling produk (misalnya: paket Pro-Coding vs Pro-Writing).
+### 1) Clone repo & install requirements
+```bash
+git clone <repo-anda>
+cd <repo-anda>
+pip install -r requirements.txt
+````
 
+### 2) Siapkan Hugging Face Token (wajib, karena dataset gated)
+
+* Daftar/login di [Hugging Face](https://huggingface.co/)
+* Minta akses ke dataset `lmsys/lmsys-arena-human-preference-55k`
+* Buat **Access Token** (format: `hf_xxx`)
+
+#### Opsi A — via environment variable
+
+```bash
+export HF_TOKEN="hf_xxx"   # Linux / MacOS
+setx HF_TOKEN "hf_xxx"     # Windows PowerShell
 ```
 
+#### Opsi B — via Streamlit secrets
+
+Buat file `.streamlit/secrets.toml`:
+
+```toml
+HF_TOKEN = "hf_xxx"
+```
+
+### 3) Jalankan Streamlit Dashboard
+
+```bash
+streamlit run dashboard.py
+```
+
+### 4) Jalankan Jupyter Notebook
+
+```bash
+jupyter notebook Proyek_Analisis_Data.ipynb
+```
+
+---
+
+## ✅ Hasil & Insight
+
+* **Model dominan** digunakan untuk coding, penulisan, dan analisis data.
+* **Win-Rate** antar model bervariasi, perlu diperhatikan CI untuk interpretasi.
+* **TTS** menunjukkan model tertentu lebih efisien menyelesaikan percakapan.
+* **Fit-for-Purpose** menegaskan keunggulan tiap model berbeda per kategori → peluang untuk **routing otomatis** & **bundling produk**.
+
+---
+
+```
