@@ -238,6 +238,15 @@ def compute_tts(df_in: pd.DataFrame, min_turn: int = 3, schema: str = "conversat
     )
     return tts
 
+@st.cache_data(show_spinner=True, ttl=1200)
+def get_tts_samples(df_in: pd.DataFrame, min_turn: int, schema: str = "conversation") -> pd.DataFrame:
+    """Ambil sampel turn untuk percakapan 'beres' (untuk histogram/boxplot)."""
+    if df_in.empty:
+        return pd.DataFrame(columns=["model_norm", "turn"])
+    eff_min = 2 if schema == "pairwise" else min_turn
+    df_use = df_in[(df_in["is_solved"]) & (df_in["turn"].fillna(0) >= eff_min)][["model_norm", "turn"]]
+    return df_use.copy()
+
 
 @st.cache_data(show_spinner=True, ttl=1200)
 def compute_fit_for_purpose(df_in: pd.DataFrame, top_n_models: int = 8):
@@ -340,17 +349,90 @@ else:
     st.pyplot(fig)
     st.caption(f"N pasangan kompetisi (apps) total: {int(wr_view['apps'].sum()):,}")
 
-# -------------------- SECTION 4: TTS --------------------
+# -------------------- SECTION 4: TTS (Turns‑to‑Solve) --------------------
 st.header("4) Turns‑to‑Solve (TTS)")
 if schema == "pairwise":
     st.info("Catatan: skema pairwise hanya 1 balasan per model → TTS ≈ 2 turn (kurang informatif).")
+
 if df_f.empty:
     st.info("Data kosong. Tidak bisa menghitung TTS.")
 else:
+    # Statistik ringkas per model
     tts_stats = compute_tts(df_f, min_turn=min_turn, schema=schema)
     eff_min = 2 if schema == "pairwise" else min_turn
-    st.caption(f"N efektif (percakapan 'beres' & turn ≥ {eff_min}): {int(tts_stats['n_solved'].sum()):,}")
 
+    st.subheader("Ringkasan TTS per Model")
+    st.dataframe(tts_stats.round(2))
+    st.download_button("⬇️ Unduh TTS (CSV)", tts_stats.to_csv().encode(), "tts_stats.csv", "text/csv")
+
+    if not tts_stats.empty:
+        # Bar chart median TTS per model
+        fig, ax = plt.subplots(figsize=(10, 5))
+        order = tts_stats.index.tolist()
+        sns.barplot(x=tts_stats.index, y=tts_stats["median"], order=order, ax=ax, palette="cividis")
+        ax.set_xlabel(""); ax.set_ylabel("Median TTS (turn)")
+        ax.set_title("Median TTS per Model (lebih kecil lebih baik)")
+        plt.xticks(rotation=20, ha="right")
+        for i, model_name in enumerate(order):
+            n = int(tts_stats.loc[model_name, "n_solved"])
+            ax.text(i, float(tts_stats.loc[model_name, "median"]) + 0.1, f"n={n}", ha="center", va="bottom", fontsize=9)
+        st.pyplot(fig)
+        st.caption(f"N efektif (percakapan 'beres' & turn ≥ {eff_min}): {int(tts_stats['n_solved'].sum()):,}")
+
+        # Sampel TTS (untuk chart distribusi)
+        tts_samples = get_tts_samples(df_f, min_turn=min_turn, schema=schema)
+
+        if schema == "pairwise":
+            # TTS konstan ~2 → fokus ke volume 'solved' per model
+            st.subheader("Distribusi Jumlah Solved per Model (Pairwise)")
+            solved_counts = tts_stats["n_solved"].sort_values(ascending=False)
+            fig_c, ax_c = plt.subplots(figsize=(10, 4.8))
+            sns.barplot(x=solved_counts.index, y=solved_counts.values, ax=ax_c, palette="cividis")
+            ax_c.set_xlabel(""); ax_c.set_ylabel("Jumlah Percakapan Solved")
+            ax_c.set_title("Volume Solved per Model")
+            plt.xticks(rotation=20, ha="right")
+            st.pyplot(fig_c)
+        else:
+            # Conversation mode → tampilkan grafik tambahan
+            if not tts_samples.empty:
+                # 4a) Histogram distribusi TTS keseluruhan
+                st.subheader("Distribusi TTS (Keseluruhan)")
+                max_turns = int(np.nanmax(tts_samples["turn"])) if not tts_samples["turn"].isna().all() else eff_min
+                bins = range(1, max(5, max_turns) + 2)  # bin per turn
+                fig_h, ax_h = plt.subplots(figsize=(9, 4.8))
+                ax_h.hist(tts_samples["turn"].dropna(), bins=bins)
+                ax_h.set_xlabel("Jumlah Turn"); ax_h.set_ylabel("Frekuensi")
+                ax_h.set_title("Histogram TTS (Percakapan Solved)")
+                st.pyplot(fig_h)
+
+                # 4b) Boxplot TTS per model (Top‑K by n_solved)
+                st.subheader("Sebaran TTS per Model (Boxplot)")
+                top_k_tts = st.sidebar.slider("Top‑K Model untuk Boxplot TTS", 4, 20, 10, 1)
+                top_models_tts = (
+                    tts_samples["model_norm"]
+                    .value_counts()
+                    .head(int(top_k_tts))
+                    .index
+                )
+                df_box = tts_samples[tts_samples["model_norm"].isin(top_models_tts)]
+                if df_box.empty:
+                    st.info("Data tidak cukup untuk boxplot TTS.")
+                else:
+                    fig_b, ax_b = plt.subplots(figsize=(10, 5))
+                    sns.boxplot(
+                        data=df_box,
+                        x="model_norm",
+                        y="turn",
+                        order=top_models_tts,
+                        ax=ax_b,
+                        palette="cividis"
+                    )
+                    ax_b.set_xlabel(""); ax_b.set_ylabel("TTS (turn)")
+                    ax_b.set_title("Sebaran TTS per Model (Top‑K by n_solved)")
+                    plt.xticks(rotation=20, ha="right")
+                    st.pyplot(fig_b)
+            else:
+                st.info("Tidak ada sampel TTS yang memenuhi kriteria untuk grafik distribusi.")
 
 # -------------------- SECTION 5: Fit‑for‑Purpose --------------------
 st.header("5) Fit‑for‑Purpose: Model × Topik")
