@@ -72,6 +72,3 @@ jupyter notebook Proyek_Analisis_Data.ipynb
 * **TTS** menunjukkan model tertentu lebih efisien menyelesaikan percakapan.
 * **Fit-for-Purpose** menegaskan keunggulan tiap model berbeda per kategori → peluang untuk **routing otomatis** & **bundling produk**.
 
----
-
-```
